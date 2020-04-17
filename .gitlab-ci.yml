@@ -1,0 +1,83 @@
+image:
+  name: hashicorp/terraform:light
+  entrypoint:
+    - '/usr/bin/env'
+    - 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+
+# Ensure that your Gitlab CI variables are set for AWS
+variables:
+  AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY
+  AWS_SECRET_ACCESS_KEY: $AWS_SECRET_KEY
+  AWS_DEFAULT_REGION: eu-west-2
+
+cache:
+  paths:
+    - terraform/.terraform/plugins
+
+before_script:
+  - terraform --version
+  - apk add --update python python-dev py-pip jq gcc g++ make 
+  - pip install awscli
+
+stages:
+  - validate
+  - converge
+  - test
+  - image
+  - cleanup
+
+validate_terraform:
+  stage: validate
+  script:
+    - cd terraform
+    - terraform init 
+    - terraform validate
+
+deploy:
+  stage: converge
+  when: manual
+  script:
+    - cd terraform
+    - terraform init 
+    - terraform workspace new imager 
+    - terraform apply --auto-approve --var ENVIRONMENT=staging
+    - terraform output --json > output.json
+  artifacts:
+    when: always
+    paths:
+      - $CI_PROJECT_DIR/terraform/terraform.tfstate.d
+      - $CI_PROJECT_DIR/terraform/output.json
+    expire_in: 1 week
+
+inspec:
+  before_script:
+    - mkdir -p /etc/chef/accepted_licenses/
+    - echo > /etc/chef/accepted_licenses/inspec
+    - apk add ruby ruby-dev gcc g++ make jq ruby-bundler ruby-webrick ruby-etc python python-dev py-pip
+    - gem install inspec inspec-bin bigdecimal
+  stage: test
+  when: manual
+  allow_failure: true
+  dependencies:
+    - deploy
+  script:
+    - cd test && ./run.sh
+
+create_image:
+  image: python:3
+  stage: image
+  when: manual
+  before_script:
+    - cd .
+  script:
+    - cd imager
+    - pip install -r requirements.txt
+    - python ./imager.py
+
+cleanup:
+  stage: cleanup
+  when: manual
+  script:
+    - cd terraform
+    - terraform workspace select imager
+    - terraform destroy --auto-approve --var ENVIRONMENT=staging

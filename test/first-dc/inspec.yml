@@ -1,0 +1,10 @@
+name: first-dc
+title: InSpec Profile for first-dc
+maintainer: MDSec
+copyright: MDSec
+copyright_email: contact@mdsec.co.uk
+license: Apache-2.0
+summary: Smoke tests for first.local DC
+version: 0.0.1
+supports:
+  platform: os
